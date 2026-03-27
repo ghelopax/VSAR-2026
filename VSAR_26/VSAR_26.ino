@@ -16,14 +16,17 @@
 #include <Adafruit_PWMServoDriver.h>
 #include <PS2X_lib.h>
 
+// #define DEBUG
+#define RUN
+
 // #############
 // CONFIGURATION
 // #############
 
 /* CONSTANTS */
 // Drive motor speed
-#define SPD_DRIVE           3072
-#define SPD_DEAD            80
+#define SPD_DRIVE           4095
+
 // Servo PW
 #define PW_MIN              440
 #define PW_MAX              2270
@@ -32,23 +35,23 @@
 
 /* PWM channels */
 // DC Motor
-#define DRIVE_LF_A 1
-#define DRIVE_LF_B 2
+#define LF_A 1
+#define LF_B 2
 
-#define DRIVE_LB_A 3
-#define DRIVE_LB_B 4
+#define LB_A 3
+#define LB_B 4
 
-#define DRIVE_RF_A 7
-#define DRIVE_RF_B 8
+#define RF_A 7
+#define RF_B 8
 
-#define DRIVE_RB_A 5
-#define DRIVE_RB_B 6
+#define RB_A 5
+#define RB_B 6
 
 /* PS2 pins */
-#define PS2_DAT             12
-#define PS2_CMD             13
-#define PS2_ATT             15
-#define PS2_CLK             14
+#define PS2_DAT             13
+#define PS2_CMD             11
+#define PS2_ATT             10
+#define PS2_CLK             12
 
 
 // ##########
@@ -95,6 +98,8 @@ void PS2_init() {
         break;
     }
 
+    delay(1000);
+
     error = ps2.config_gamepad(PS2_CLK, PS2_CMD, PS2_ATT, PS2_DAT);
   }
 
@@ -112,8 +117,32 @@ void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed) {
 // DRIVETRAIN: Mecanum Drive
 // #########################
 
-void drivetrain_update() {
-  
+void drivetrain_update(uint8_t stra, uint8_t forw, uint8_t rota) {
+  int16_t x = map(stra, 0, 255, -SPD_DRIVE,  SPD_DRIVE);
+  int16_t y = map(forw, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
+  int16_t r = map(rota, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
+
+  int16_t d = max(abs(x) + abs(y) + abs(r), SPD_DRIVE);
+
+  #ifdef RUN
+  dc_control(LF_A, LF_B, (double)( x + y - r) / d * SPD_DRIVE);
+  dc_control(RB_A, RB_B, (double)( x + y + r) / d * SPD_DRIVE);
+  dc_control(LB_A, LB_B, (double)(-x + y - r) / d * SPD_DRIVE);
+  dc_control(RF_A, RF_B, (double)(-x + y + r) / d * SPD_DRIVE);
+  #endif
+
+  #ifdef DEBUG
+  Serial.println("MECANUM:");
+  Serial.println(x);
+  Serial.println(y);
+  Serial.println(r);
+  Serial.println(d);
+  Serial.print((double)( x + y - r) / d); Serial.print(" ");
+  Serial.print((double)(-x + y + r) / d); Serial.print("\n");
+  Serial.print((double)(-x + y - r) / d); Serial.print(" ");
+  Serial.print((double)( x + y + r) / d); Serial.print("\n");
+  delay(500);
+  #endif
 }
 
 
@@ -124,12 +153,12 @@ void drivetrain_update() {
 void setup() {
   Serial.begin(115200);  // Arduino Uno R3 baud rate (bps)
 
-  PWMDriver_init();
+  // PWMDriver_init();
   PS2_init();
 }
 
 void loop() {
   ps2.read_gamepad();  // update from controller
 
-  drivetrain_update();
+  drivetrain_update(ps2.Analog(PSS_LX), ps2.Analog(PSS_LY), ps2.Analog(PSS_RX));
 }
