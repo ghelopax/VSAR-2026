@@ -107,7 +107,9 @@ void PS2_init() {
 }
 
 /* Control */
-void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed) {
+void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse = false) {
+  if (reverse) speed = -speed;
+
   pwm.setPWM(channelA, 0, ((speed > 0) ?   speed  : 0));
   pwm.setPWM(channelB, 0, ((speed < 0) ? (-speed) : 0));
 }
@@ -126,9 +128,9 @@ void drivetrain_update(uint8_t stra, uint8_t forw, uint8_t rota) {
 
   #ifdef RUN
   dc_control(LF_A, LF_B, (double)( x + y - r) / d * SPD_DRIVE);
-  dc_control(RB_A, RB_B, (double)( x + y + r) / d * SPD_DRIVE);
   dc_control(LB_A, LB_B, (double)(-x + y - r) / d * SPD_DRIVE);
-  dc_control(RF_A, RF_B, (double)(-x + y + r) / d * SPD_DRIVE);
+  dc_control(RB_A, RB_B, (double)( x + y + r) / d * SPD_DRIVE, true);
+  dc_control(RF_A, RF_B, (double)(-x + y + r) / d * SPD_DRIVE, true);
   #endif
 
   #ifdef DEBUG
@@ -137,10 +139,8 @@ void drivetrain_update(uint8_t stra, uint8_t forw, uint8_t rota) {
   Serial.println(y);
   Serial.println(r);
   Serial.println(d);
-  Serial.print((double)( x + y - r) / d); Serial.print(" ");
-  Serial.print((double)(-x + y + r) / d); Serial.print("\n");
-  Serial.print((double)(-x + y - r) / d); Serial.print(" ");
-  Serial.print((double)( x + y + r) / d); Serial.print("\n");
+  Serial.print((double)( x + y - r) / d); Serial.print(" "); Serial.print((double)(-x + y + r) / d); Serial.print("\n"); // LF RF
+  Serial.print((double)(-x + y - r) / d); Serial.print(" "); Serial.print((double)( x + y + r) / d); Serial.print("\n"); // LB RB
   delay(500);
   #endif
 }
