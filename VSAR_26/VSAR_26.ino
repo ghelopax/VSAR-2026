@@ -4,8 +4,8 @@
  > ^ <  > ^ <  > ^ <  > ^ <        |___PWM DRIVER: Adafruit PWM Servo Driver
 #######              #######       |___HARDWARE API: dc_control()
  /\_/\    ghelopax    /\_/\        |___DRIVETRAIN: Mecanum Drive
-( o.o )              ( o.o )       |___ARDUINO FUNCTIONS: setup(), loop()
- > ^ <   @itsmevjnk   > ^ <
+( o.o )     ntm      ( o.o )       |___SUBSYSTEMS: Linear Slide, Sushi-roll Intake
+ > ^ <   @itsmevjnk   > ^ <        |___ARDUINO FUNCTIONS: setup(), loop()
 #######              #######
  /\_/\  /\_/\  /\_/\  /\_/\
 ( o.o )( o.o )( o.o )( o.o )
@@ -24,34 +24,46 @@
 // #############
 
 /* CONSTANTS */
-// Drive motor speed
-#define SPD_DRIVE           4095
+// Motor speed
+#define SPD_DRIVE        4095
+#define SPD_SLIDE        4000
+#define SPD_INTAKE       4000
+#define SPD_CONVEY_LOAD  1000
+#define SPD_CONVEY_SHOOT 4095
 
 // Servo PW
-#define PW_MIN              440
-#define PW_MAX              2270
-#define CR_PW_MIN           400
-#define CR_PW_MID           1400
+#define PW_SER_MIN       440
+#define PW_SER_MAX       2270
+#define PW_CRS_MIN       400
+#define PW_CRS_MID       1400
 
 /* PWM channels */
 // DC Motor
-#define LF_A 1
-#define LF_B 2
+// Drivetrain
+#define LF_A             1      // Mecanum Drive
+#define LF_B             2
+#define LB_A             3
+#define LB_B             4
+#define RF_A             7
+#define RF_B             8
+#define RB_A             5
+#define RB_B             6
 
-#define LB_A 3
-#define LB_B 4
+// Subsystem
+#define LS_A             9      // Linear Slide
+#define LS_B             10
 
-#define RF_A 7
-#define RF_B 8
+#define IT_A             11     // Intake
+#define IT_B             12
 
-#define RB_A 5
-#define RB_B 6
+#define CB_A             13     // Conveyor Belt
+#define CB_B             14
 
 /* PS2 pins */
-#define PS2_DAT             13
-#define PS2_CMD             11
-#define PS2_ATT             10
-#define PS2_CLK             12
+#define PS2_DAT          13
+#define PS2_CMD          11
+#define PS2_ATT          10
+#define PS2_CLK          12
 
 
 // ##########
@@ -60,7 +72,7 @@
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-void PWMDriver_init() {
+void init_PWMDriver() {
   Serial.print(F("Initializing PCA9685..."));
 
   // PWM Init
@@ -81,7 +93,7 @@ void PWMDriver_init() {
 /* PS2 Controller */
 PS2X ps2;
 
-void PS2_init() {
+void init_PS2() {
   Serial.print(F("Initializing PS2 controller..."));
 
   uint8_t error = ps2.config_gamepad(PS2_CLK, PS2_CMD, PS2_ATT, PS2_DAT);
@@ -110,8 +122,10 @@ void PS2_init() {
 void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse = false) {
   if (reverse) speed = -speed;
 
+  #ifdef RUN
   pwm.setPWM(channelA, 0, ((speed > 0) ?   speed  : 0));
   pwm.setPWM(channelB, 0, ((speed < 0) ? (-speed) : 0));
+  #endif
 }
 
 
@@ -119,19 +133,16 @@ void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse 
 // DRIVETRAIN: Mecanum Drive
 // #########################
 
-void drivetrain_update(uint8_t stra, uint8_t forw, uint8_t rota) {
+void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
   int16_t x = map(stra, 0, 255, -SPD_DRIVE,  SPD_DRIVE);
   int16_t y = map(forw, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
   int16_t r = map(rota, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
-
   int16_t d = max(abs(x) + abs(y) + abs(r), SPD_DRIVE);
 
-  #ifdef RUN
   dc_control(LF_A, LF_B, (double)( x + y - r) / d * SPD_DRIVE);
   dc_control(LB_A, LB_B, (double)(-x + y - r) / d * SPD_DRIVE);
   dc_control(RB_A, RB_B, (double)( x + y + r) / d * SPD_DRIVE, true);
   dc_control(RF_A, RF_B, (double)(-x + y + r) / d * SPD_DRIVE, true);
-  #endif
 
   #ifdef DEBUG
   Serial.println("MECANUM:");
@@ -146,6 +157,35 @@ void drivetrain_update(uint8_t stra, uint8_t forw, uint8_t rota) {
 }
 
 
+// ##########
+// SUBSYSTEMS
+// ##########
+
+/* Linear Slide */
+void update_linearslide(bool exte, bool rest) {
+  if (exte) dc_control(LS_A, LS_B, SPD_SLIDE);
+  if (rest) dc_control(LS_A, LS_B, 0);
+}
+
+/* Sushi-roll intake */
+bool state_intake;
+
+void update_intake(bool togg) {
+  state_intake ^= togg;
+
+  if (togg) dc_control(IT_A, IT_B, (state_intake ? SPD_INTAKE : 0));
+}
+
+/* Conveyor Belt */
+bool conveyorbelt_shoot;
+
+void update_conveyorbelt(bool run, bool rest, bool togg) {
+  conveyorbelt_shoot ^= togg;
+
+  if (run)  dc_control(CB_A, CB_B, (conveyorbelt_shoot ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
+  if (rest) dc_control(CB_A, CB_B, 0);
+}
+
 // #################
 // ARDUINO FUNCTIONS
 // #################
@@ -153,12 +193,20 @@ void drivetrain_update(uint8_t stra, uint8_t forw, uint8_t rota) {
 void setup() {
   Serial.begin(115200);  // Arduino Uno R3 baud rate (bps)
 
-  // PWMDriver_init();
-  PS2_init();
+  Serial.println("VSAR 2026 : RIAN C");
+
+  init_PWMDriver();
+  init_PS2();
+
+  state_intake = false;
+  conveyorbelt_shoot = false;
 }
 
 void loop() {
   ps2.read_gamepad();  // update from controller
 
-  drivetrain_update(ps2.Analog(PSS_LX), ps2.Analog(PSS_LY), ps2.Analog(PSS_RX));
+  update_drivetrain(ps2.Analog(PSS_LX), ps2.Analog(PSS_LY), ps2.Analog(PSS_RX));
+  update_linearslide(ps2.ButtonPressed(PSB_R1), ps2.ButtonReleased(PSB_R1));
+  update_intake(ps2.ButtonPressed(PSB_L1));
+  update_conveyorbelt(ps2.ButtonPressed(PSB_R2), ps2.ButtonReleased(PSB_R2), ps2.ButtonPressed(PSB_TRIANGLE));
 }
