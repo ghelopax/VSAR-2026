@@ -34,12 +34,6 @@
 #define SPD_CONVEY_LOAD  PER(0.3)
 #define SPD_CONVEY_SHOOT PER(1.0)
 
-// Servo PW
-#define PW_SER_MIN       440
-#define PW_SER_MAX       2270
-#define PW_CRS_MIN       400
-#define PW_CRS_MID       1400
-
 /* PWM channels */
 // DC Motor
 // Drivetrain
