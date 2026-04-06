@@ -25,11 +25,14 @@
 
 /* CONSTANTS */
 // Motor speed
-#define SPD_DRIVE        4095
-#define SPD_SLIDE        4000
-#define SPD_INTAKE       4000
-#define SPD_CONVEY_LOAD  1000
-#define SPD_CONVEY_SHOOT 4095
+#define SPD_MAX          4095
+#define PER(percentage)  (int16_t)(SPD_MAX * percentage)
+
+#define SPD_DRIVE        PER(1.0)
+#define SPD_SLIDE        PER(0.8)
+#define SPD_INTAKE       PER(0.8)
+#define SPD_CONVEY_LOAD  PER(0.3)
+#define SPD_CONVEY_SHOOT PER(1.0)
 
 // Servo PW
 #define PW_SER_MIN       440
