@@ -122,6 +122,7 @@ void init_PS2() {
 }
 
 /* Control */
+// speed = 0...4095
 void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse = false) {
   if (reverse) speed = -speed;
 
@@ -166,12 +167,18 @@ void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
 
 /* Linear Slide */
 void update_linearslide(bool exte, bool rest) {
+  if (!(exte ^ rest)) return;
+
   if (exte) dc_control(LS_A, LS_B, SPD_SLIDE);
   if (rest) dc_control(LS_A, LS_B, 0);
 }
 
 /* Sushi-roll intake */
 bool state_intake;
+
+void init_intake() {
+  state_intake = false;
+}
 
 void update_intake(bool togg) {
   state_intake ^= togg;
@@ -182,12 +189,17 @@ void update_intake(bool togg) {
 /* Conveyor Belt */
 bool conveyorbelt_shoot;
 
+void init_conveyorbelt() {
+  conveyorbelt_shoot = false;
+}
+
 void update_conveyorbelt(bool run, bool rest, bool togg) {
   conveyorbelt_shoot ^= togg;
 
   if (run)  dc_control(CB_A, CB_B, (conveyorbelt_shoot ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
   if (rest) dc_control(CB_A, CB_B, 0);
 }
+
 
 // #################
 // ARDUINO FUNCTIONS
@@ -201,8 +213,9 @@ void setup() {
   init_PWMDriver();
   init_PS2();
 
-  state_intake = false;
-  conveyorbelt_shoot = false;
+  update_linearslide(0, 1);
+  init_intake();
+  init_conveyorbelt();
 }
 
 void loop() {
