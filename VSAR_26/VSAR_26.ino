@@ -4,7 +4,7 @@
  > ^ <  > ^ <  > ^ <  > ^ <        |___PWM DRIVER: Adafruit PWM Servo Driver
 #######              #######       |___HARDWARE API: dc_control()
  /\_/\    ghelopax    /\_/\        |___DRIVETRAIN: Mecanum Drive
-( o.o )     ntm      ( o.o )       |___SUBSYSTEMS: Linear Slide, Sushi-roll Intake
+( o.o )     ntm      ( o.o )       |___SUBSYSTEMS: Linear Slide, Sushi-roll Intake, Conveyor Belt
  > ^ <   @itsmevjnk   > ^ <        |___ARDUINO FUNCTIONS: setup(), loop()
 #######              #######
  /\_/\  /\_/\  /\_/\  /\_/\
@@ -136,6 +136,13 @@ void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse 
 // DRIVETRAIN: Mecanum Drive
 // #########################
 
+void test_drivetrain() {
+  dc_control(LF_A, LF_B, SPD_DRIVE);
+  dc_control(LB_A, LB_B, SPD_DRIVE);
+  dc_control(RF_A, RF_B, SPD_DRIVE, true);
+  dc_control(RB_A, RB_B, SPD_DRIVE, true);
+}
+
 void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
   int16_t x = map(stra, 0, 255, -SPD_DRIVE,  SPD_DRIVE);
   int16_t y = map(forw, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
@@ -169,13 +176,15 @@ void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
 // SUBSYSTEMS
 // ##########
 
-/* Linear Slide */
-void update_linearslide(bool exte, bool rest) {
-  if (exte) dc_control(LS_A, LS_B, SPD_SLIDE);
-  if (rest) dc_control(LS_A, LS_B, 0);
+/* Linear Slide (PUSH: Multistate) */
+void update_linearslide(bool exte, bool retr) {
+  if (!(exte ^ retr)) dc_control(LS_A, LS_B, 0);
+
+  if (exte) dc_control(LS_A, LS_B,  SPD_SLIDE);
+  if (retr) dc_control(LS_A, LS_B, -SPD_SLIDE);
 }
 
-/* Sushi-roll intake */
+/* Sushi-roll intake (TOGGLE) */
 bool state_intake;
 
 void init_intake() {
@@ -185,21 +194,21 @@ void init_intake() {
 void update_intake(bool togg) {
   state_intake ^= togg;
 
-  if (togg) dc_control(IT_A, IT_B, (state_intake ? SPD_INTAKE : 0));
+  dc_control(IT_A, IT_B, (state_intake ? SPD_INTAKE : 0));
 }
 
-/* Conveyor Belt */
+/* Conveyor Belt (PUSH + TOGGLE Mode) */
 bool conveyorbelt_shoot;
 
 void init_conveyorbelt() {
   conveyorbelt_shoot = false;
 }
 
-void update_conveyorbelt(bool run, bool rest, bool togg) {
+void update_conveyorbelt(bool run, bool togg) {
   conveyorbelt_shoot ^= togg;
 
-  if (run)  dc_control(CB_A, CB_B, (conveyorbelt_shoot ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
-  if (rest) dc_control(CB_A, CB_B, 0);
+  if (run) dc_control(CB_A, CB_B, (conveyorbelt_shoot ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
+  else     dc_control(CB_A, CB_B, 0);
 }
 
 
@@ -223,8 +232,24 @@ void setup() {
 void loop() {
   ps2.read_gamepad();  // update from controller
 
-  update_drivetrain(ps2.Analog(PSS_LX), ps2.Analog(PSS_LY), ps2.Analog(PSS_RX));
-  update_linearslide(ps2.ButtonPressed(PSB_R1), ps2.ButtonReleased(PSB_R1));
-  update_intake(ps2.ButtonPressed(PSB_L1));
-  update_conveyorbelt(ps2.ButtonPressed(PSB_R2), ps2.ButtonReleased(PSB_R2), ps2.ButtonPressed(PSB_TRIANGLE));
+  // update_drivetrain(
+  //   ps2.Analog(PSS_LX), 
+  //   ps2.Analog(PSS_LY), 
+  //   ps2.Analog(PSS_RX)
+  // );
+  test_drivetrain();
+
+  update_linearslide(
+    ps2.Button(PSB_PAD_UP), 
+    ps2.Button(PSB_PAD_DOWN)
+  );
+
+  update_intake(
+    ps2.ButtonPressed(PSB_L1)
+  );
+
+  update_conveyorbelt(
+    ps2.Button(PSB_R1),
+    ps2.ButtonPressed(PSB_TRIANGLE)
+  );
 }
