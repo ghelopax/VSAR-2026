@@ -16,7 +16,10 @@
 #include <Adafruit_PWMServoDriver.h>
 #include <PS2X_lib.h>
 
-// #define DEBUG
+#define SPC Serial.print(" ")
+#define EL  Serial.print("\n");
+
+#define DEBUG
 #define RUN
 
 // #############
@@ -26,6 +29,7 @@
 /* CONSTANTS */
 // Motor speed
 #define SPD_MAX          4095
+#define SPD_DEAD         50
 #define PER(percentage)  (int16_t)(SPD_MAX * percentage)
 
 #define SPD_DRIVE        PER(1.0)
@@ -118,6 +122,7 @@ void init_PS2() {
 /* Control */
 // speed = 0...4095
 void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse = false) {
+  if (abs(speed) < SPD_DEAD) speed = 0;
   if (reverse) speed = -speed;
 
   #ifdef RUN
@@ -137,19 +142,24 @@ void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
   int16_t r = map(rota, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
   int16_t d = max(abs(x) + abs(y) + abs(r), SPD_DRIVE);
 
-  dc_control(LF_A, LF_B, (double)( x + y - r) / d * SPD_DRIVE);
-  dc_control(LB_A, LB_B, (double)(-x + y - r) / d * SPD_DRIVE);
-  dc_control(RB_A, RB_B, (double)( x + y + r) / d * SPD_DRIVE, true);
-  dc_control(RF_A, RF_B, (double)(-x + y + r) / d * SPD_DRIVE, true);
+  int16_t lf = (int32_t)( x + y - r) * SPD_DRIVE / d;
+  int16_t lb = (int32_t)(-x + y - r) * SPD_DRIVE / d;
+  int16_t rf = (int32_t)(-x + y + r) * SPD_DRIVE / d;
+  int16_t rb = (int32_t)( x + y + r) * SPD_DRIVE / d;
 
+  dc_control(LF_A, LF_B, lf);
+  dc_control(LB_A, LB_B, lb);
+  dc_control(RF_A, RF_B, rf, true);
+  dc_control(RB_A, RB_B, rb, true);
+  
   #ifdef DEBUG
   Serial.println("MECANUM:");
   Serial.println(x);
   Serial.println(y);
   Serial.println(r);
   Serial.println(d);
-  Serial.print((double)( x + y - r) / d); Serial.print(" "); Serial.print((double)(-x + y + r) / d); Serial.print("\n"); // LF RF
-  Serial.print((double)(-x + y - r) / d); Serial.print(" "); Serial.print((double)( x + y + r) / d); Serial.print("\n"); // LB RB
+  Serial.print(lf); SPC; Serial.println(rf);
+  Serial.print(lb); SPC; Serial.println(rb);
   delay(500);
   #endif
 }
@@ -161,8 +171,6 @@ void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
 
 /* Linear Slide */
 void update_linearslide(bool exte, bool rest) {
-  if (!(exte ^ rest)) return;
-
   if (exte) dc_control(LS_A, LS_B, SPD_SLIDE);
   if (rest) dc_control(LS_A, LS_B, 0);
 }
