@@ -19,7 +19,7 @@
 #define SPC Serial.print(" ")
 #define EL  Serial.print("\n");
 
-#define DEBUG
+// #define DEBUG
 #define RUN
 
 // #############
@@ -41,24 +41,24 @@
 /* PWM channels */
 // DC Motor
 // Drivetrain
-#define LF_A             1      // Mecanum Drive
-#define LF_B             2
-#define LB_A             3
-#define LB_B             4
-#define RF_A             7
-#define RF_B             8
-#define RB_A             5
-#define RB_B             6
+#define LF_A             0      // Mecanum Drive
+#define LF_B             1
+#define LB_A             2
+#define LB_B             3
+#define RF_A             6
+#define RF_B             7
+#define RB_A             4
+#define RB_B             5
 
 // Subsystem
-#define LS_A             9      // Linear Slide
-#define LS_B             10
+#define LS_A             8      // Linear Slide
+#define LS_B             9
 
-#define IT_A             11     // Intake
-#define IT_B             12
+#define IT_A             10     // Intake
+#define IT_B             11
 
-#define CB_A             13     // Conveyor Belt
-#define CB_B             14
+#define CB_A             12     // Conveyor Belt
+#define CB_B             13
 
 /* PS2 pins */
 #define PS2_DAT          13
@@ -85,7 +85,6 @@ void init_PWMDriver() {
 
   Serial.println(F("done."));
 }
-
 
 // ############
 // HARDWARE API
@@ -136,81 +135,88 @@ void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse 
 // DRIVETRAIN: Mecanum Drive
 // #########################
 
-void test_drivetrain() {
-  dc_control(LF_A, LF_B, SPD_DRIVE);
-  dc_control(LB_A, LB_B, SPD_DRIVE);
-  dc_control(RF_A, RF_B, SPD_DRIVE, true);
-  dc_control(RB_A, RB_B, SPD_DRIVE, true);
-}
+struct Drivetrain {
+  void test() {
+    dc_control(LF_A, LF_B, SPD_DRIVE);
+    dc_control(LB_A, LB_B, SPD_DRIVE);
+    dc_control(RF_A, RF_B, SPD_DRIVE, true);
+    dc_control(RB_A, RB_B, SPD_DRIVE, true);
+  }
 
-void update_drivetrain(uint8_t stra, uint8_t forw, uint8_t rota) {
-  int16_t x = map(stra, 0, 255, -SPD_DRIVE,  SPD_DRIVE);
-  int16_t y = map(forw, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
-  int16_t r = map(rota, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
-  int16_t d = max(abs(x) + abs(y) + abs(r), SPD_DRIVE);
+  void update(uint8_t stra, uint8_t forw, uint8_t rota) {
+    int16_t x = map(stra, 0, 255, -SPD_DRIVE,  SPD_DRIVE);
+    int16_t y = map(forw, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
+    int16_t r = map(rota, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
+    int16_t d = max(abs(x) + abs(y) + abs(r), SPD_DRIVE);
 
-  int16_t lf = (int32_t)( x + y - r) * SPD_DRIVE / d;
-  int16_t lb = (int32_t)(-x + y - r) * SPD_DRIVE / d;
-  int16_t rf = (int32_t)(-x + y + r) * SPD_DRIVE / d;
-  int16_t rb = (int32_t)( x + y + r) * SPD_DRIVE / d;
+    int16_t lf = (int32_t)( x + y - r) * SPD_DRIVE / d;
+    int16_t lb = (int32_t)(-x + y - r) * SPD_DRIVE / d;
+    int16_t rf = (int32_t)(-x + y + r) * SPD_DRIVE / d;
+    int16_t rb = (int32_t)( x + y + r) * SPD_DRIVE / d;
 
-  dc_control(LF_A, LF_B, lf);
-  dc_control(LB_A, LB_B, lb);
-  dc_control(RF_A, RF_B, rf, true);
-  dc_control(RB_A, RB_B, rb, true);
-  
-  #ifdef DEBUG
-  Serial.println("MECANUM:");
-  Serial.println(x);
-  Serial.println(y);
-  Serial.println(r);
-  Serial.println(d);
-  Serial.print(lf); SPC; Serial.println(rf);
-  Serial.print(lb); SPC; Serial.println(rb);
-  delay(500);
-  #endif
-}
-
+    dc_control(LF_A, LF_B, lf);
+    dc_control(LB_A, LB_B, lb);
+    dc_control(RF_A, RF_B, rf, true);
+    dc_control(RB_A, RB_B, rb, true);
+    
+    #ifdef DEBUG
+    Serial.println("MECANUM:");
+    Serial.println(x);
+    Serial.println(y);
+    Serial.println(r);
+    Serial.println(d);
+    Serial.print(lf); SPC; Serial.println(rf);
+    Serial.print(lb); SPC; Serial.println(rb);
+    delay(500);
+    #endif
+  }
+} drivetrain;
 
 // ##########
 // SUBSYSTEMS
 // ##########
 
 /* Linear Slide (PUSH: Multistate) */
-void update_linearslide(bool exte, bool retr) {
-  if (!(exte ^ retr)) dc_control(LS_A, LS_B, 0);
+struct Linear_Slide {
+  void update(bool exte, bool retr) {
+    if (!(exte ^ retr)) dc_control(LS_A, LS_B, 0);
 
-  if (exte) dc_control(LS_A, LS_B,  SPD_SLIDE);
-  if (retr) dc_control(LS_A, LS_B, -SPD_SLIDE);
-}
+    if (exte) dc_control(LS_A, LS_B,  SPD_SLIDE);
+    if (retr) dc_control(LS_A, LS_B, -SPD_SLIDE);
+  }
+} linearslide;
 
 /* Sushi-roll intake (TOGGLE) */
-bool state_intake;
+struct Intake {
+  bool state;
 
-void init_intake() {
-  state_intake = false;
-}
+  void init() {
+    state = false;
+  }
 
-void update_intake(bool togg) {
-  state_intake ^= togg;
+  void update(bool togg) {
+    state ^= togg;
 
-  dc_control(IT_A, IT_B, (state_intake ? SPD_INTAKE : 0));
-}
+    dc_control(IT_A, IT_B, (state ? SPD_INTAKE : 0));
+  }
+} intake;
 
 /* Conveyor Belt (PUSH + TOGGLE Mode) */
-bool conveyorbelt_shoot;
+struct Conveyor_Belt {
+  bool shootmode;
 
-void init_conveyorbelt() {
-  conveyorbelt_shoot = false;
-}
+  void init() {
+    shootmode = false;
+  }
 
-void update_conveyorbelt(bool run, bool togg) {
-  conveyorbelt_shoot ^= togg;
+  void update(bool run, bool togg) {
+    shootmode ^= togg;
 
-  if (run) dc_control(CB_A, CB_B, (conveyorbelt_shoot ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
-  else     dc_control(CB_A, CB_B, 0);
-}
+    if (run) dc_control(CB_A, CB_B, (shootmode ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
+    else     dc_control(CB_A, CB_B, 0);
+  }
 
+} conveyorbelt;
 
 // #################
 // ARDUINO FUNCTIONS
@@ -224,31 +230,31 @@ void setup() {
   init_PWMDriver();
   init_PS2();
 
-  update_linearslide(0, 1);
-  init_intake();
-  init_conveyorbelt();
+  linearslide.update(0, 1);
+  intake.init();
+  conveyorbelt.init();
 }
 
 void loop() {
   ps2.read_gamepad();  // update from controller
 
-  // update_drivetrain(
-  //   ps2.Analog(PSS_LX), 
-  //   ps2.Analog(PSS_LY), 
-  //   ps2.Analog(PSS_RX)
-  // );
-  test_drivetrain();
+  drivetrain.update(
+    ps2.Analog(PSS_LX),
+    ps2.Analog(PSS_LY),
+    ps2.Analog(PSS_RX)
+  );
+  // drivetrain.test();
 
-  update_linearslide(
-    ps2.Button(PSB_PAD_UP), 
+  linearslide.update(
+    ps2.Button(PSB_PAD_UP),
     ps2.Button(PSB_PAD_DOWN)
   );
 
-  update_intake(
+  intake.update(
     ps2.ButtonPressed(PSB_L1)
   );
 
-  update_conveyorbelt(
+  conveyorbelt.update(
     ps2.Button(PSB_R1),
     ps2.ButtonPressed(PSB_TRIANGLE)
   );
