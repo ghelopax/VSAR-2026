@@ -19,7 +19,8 @@
 #define SPC Serial.print(" ")
 #define EL  Serial.print("\n");
 
-// #define DEBUG
+// #define DEBUG_MECANUM
+// #define DEBUG_SETPWM
 #define RUN
 
 // #############
@@ -32,11 +33,14 @@
 #define SPD_DEAD         50
 #define PER(percentage)  (int16_t)(SPD_MAX * percentage)
 
-#define SPD_DRIVE        PER(1.0)
-#define SPD_SLIDE        PER(0.8)
-#define SPD_INTAKE       PER(0.8)
-#define SPD_CONVEY_LOAD  PER(0.3)
-#define SPD_CONVEY_SHOOT PER(1.0)
+#define SPD_DRIVE_LF     PER(1.00)
+#define SPD_DRIVE_LB     PER(0.97)
+#define SPD_DRIVE_RF     PER(0.97)
+#define SPD_DRIVE_RB     PER(0.97)
+#define SPD_SLIDE        PER(1.00)
+#define SPD_INTAKE       PER(1.00)
+#define SPD_CONVEY_LOAD  PER(0.30)
+#define SPD_CONVEY_SHOOT PER(1.00)
 
 /* PWM channels */
 // DC Motor
@@ -119,16 +123,33 @@ void init_PS2() {
 }
 
 /* Control */
-// speed = 0...4095
-void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse = false) {
-  if (abs(speed) < SPD_DEAD) speed = 0;
-  if (reverse) speed = -speed;
+struct DCMotor {
+  private:
+  uint8_t channelA, channelB;
+  bool reverse;
 
-  #ifdef RUN
-  pwm.setPWM(channelA, 0, ((speed > 0) ?   speed  : 0));
-  pwm.setPWM(channelB, 0, ((speed < 0) ? (-speed) : 0));
-  #endif
-}
+  public:
+  DCMotor(uint8_t _channelA, uint8_t _channelB, bool _reverse = false) : 
+    channelA(_channelA), 
+    channelB(_channelB), 
+    reverse(_reverse) 
+  {}
+
+  void control(int16_t speed) {
+    if (abs(speed) < SPD_DEAD) speed = 0;
+    if (reverse) speed = -speed;
+
+    #ifdef RUN
+    pwm.setPWM(channelA, 0, ((speed > 0) ?   speed  : 0));
+    pwm.setPWM(channelB, 0, ((speed < 0) ? (-speed) : 0));
+    #endif
+
+    #ifdef DEBUG_SETPWM
+    Serial.print(channelA); Serial.print(": "); Serial.print(pwm.getPWM(channelA, true)); SPC; 
+    Serial.print(channelB); Serial.print(": "); Serial.println(pwm.getPWM(channelB, true));
+    #endif
+    }
+};
 
 
 // #########################
@@ -136,30 +157,41 @@ void dc_control(uint8_t channelA, uint8_t channelB, int16_t speed, bool reverse 
 // #########################
 
 struct Drivetrain {
-  void test() {
-    dc_control(LF_A, LF_B, SPD_DRIVE);
-    dc_control(LB_A, LB_B, SPD_DRIVE);
-    dc_control(RF_A, RF_B, SPD_DRIVE, true);
-    dc_control(RB_A, RB_B, SPD_DRIVE, true);
+  private:
+  DCMotor leftfront, leftback, rightfront, rightback;
+
+  public:
+  Drivetrain() : 
+    leftfront(LF_A, LF_B), 
+    leftback(LB_A, LB_B), 
+    rightfront(RF_A, RF_B, true), 
+    rightback(RB_A, RB_B, true)
+  {}
+
+  void test() { // default to forward movement
+    leftfront .control(SPD_DRIVE_LF);
+    leftback  .control(SPD_DRIVE_LB);
+    rightfront.control(SPD_DRIVE_RF);
+    rightback .control(SPD_DRIVE_RB);
   }
 
   void update(uint8_t stra, uint8_t forw, uint8_t rota) {
-    int16_t x = map(stra, 0, 255, -SPD_DRIVE,  SPD_DRIVE);
-    int16_t y = map(forw, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
-    int16_t r = map(rota, 0, 255,  SPD_DRIVE, -SPD_DRIVE);
-    int16_t d = max(abs(x) + abs(y) + abs(r), SPD_DRIVE);
+    int16_t x = map(stra, 0, 255, -SPD_MAX,  SPD_MAX);
+    int16_t y = map(forw, 0, 255,  SPD_MAX, -SPD_MAX);
+    int16_t r = map(rota, 0, 255,  SPD_MAX, -SPD_MAX);
+    int16_t d = max(abs(x) + abs(y) + abs(r), SPD_MAX);
 
-    int16_t lf = (int32_t)( x + y - r) * SPD_DRIVE / d;
-    int16_t lb = (int32_t)(-x + y - r) * SPD_DRIVE / d;
-    int16_t rf = (int32_t)(-x + y + r) * SPD_DRIVE / d;
-    int16_t rb = (int32_t)( x + y + r) * SPD_DRIVE / d;
+    int16_t lf = (int32_t)( x + y - r) * SPD_DRIVE_LF / d;
+    int16_t lb = (int32_t)(-x + y - r) * SPD_DRIVE_LB / d;
+    int16_t rf = (int32_t)(-x + y + r) * SPD_DRIVE_RF / d;
+    int16_t rb = (int32_t)( x + y + r) * SPD_DRIVE_RB / d;
 
-    dc_control(LF_A, LF_B, lf);
-    dc_control(LB_A, LB_B, lb);
-    dc_control(RF_A, RF_B, rf, true);
-    dc_control(RB_A, RB_B, rb, true);
-    
-    #ifdef DEBUG
+    leftfront .control(lf);
+    leftback  .control(lb);
+    rightfront.control(rf);
+    rightback .control(rb);
+  
+    #ifdef DEBUG_MECANUM
     Serial.println("MECANUM:");
     Serial.println(x);
     Serial.println(y);
@@ -178,42 +210,50 @@ struct Drivetrain {
 
 /* Linear Slide (PUSH: Multistate) */
 struct Linear_Slide {
-  void update(bool exte, bool retr) {
-    if (!(exte ^ retr)) dc_control(LS_A, LS_B, 0);
+  private:
+  DCMotor slide;
 
-    if (exte) dc_control(LS_A, LS_B,  SPD_SLIDE);
-    if (retr) dc_control(LS_A, LS_B, -SPD_SLIDE);
+  public:
+  Linear_Slide() : slide(LS_A, LS_B) {}
+
+  void update(bool exte, bool retr) {
+    if (!(exte ^ retr)) slide.control(0);
+
+    if (exte) slide.control( SPD_SLIDE);
+    if (retr) slide.control(-SPD_SLIDE);
   }
 } linearslide;
 
 /* Sushi-roll intake (TOGGLE) */
 struct Intake {
+  private:
   bool state;
+  DCMotor in;
 
-  void init() {
-    state = false;
-  }
+  public:
+  Intake() : state(false), in(IT_A, IT_B) {}
 
   void update(bool togg) {
     state ^= togg;
 
-    dc_control(IT_A, IT_B, (state ? SPD_INTAKE : 0));
+    in.control((state ? SPD_INTAKE : 0));
   }
 } intake;
 
 /* Conveyor Belt (PUSH + TOGGLE Mode) */
 struct Conveyor_Belt {
+  private:
   bool shootmode;
+  DCMotor convey;
 
-  void init() {
-    shootmode = false;
-  }
+  public:
+  Conveyor_Belt() : shootmode(false), convey(CB_A, CB_B) {}
 
   void update(bool run, bool togg) {
     shootmode ^= togg;
 
-    if (run) dc_control(CB_A, CB_B, (shootmode ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
-    else     dc_control(CB_A, CB_B, 0);
+    if (run) convey.control((shootmode ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
+    else     convey.control(0);
   }
 
 } conveyorbelt;
@@ -229,10 +269,6 @@ void setup() {
 
   init_PWMDriver();
   init_PS2();
-
-  linearslide.update(0, 1);
-  intake.init();
-  conveyorbelt.init();
 }
 
 void loop() {
@@ -258,4 +294,8 @@ void loop() {
     ps2.Button(PSB_R1),
     ps2.ButtonPressed(PSB_TRIANGLE)
   );
+
+  #ifdef DEBUG_SETPWM
+  delay(100);
+  #endif
 }
