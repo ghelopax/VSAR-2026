@@ -2,7 +2,7 @@
  /\_/\  /\_/\  /\_/\  /\_/\        VSAR_26.ino:
 ( o.o )( o.o )( o.o )( o.o )       |___CONFIGURATION: Constants and channels
  > ^ <  > ^ <  > ^ <  > ^ <        |___PWM DRIVER: Adafruit PWM Servo Driver
-#######              #######       |___HARDWARE API: dc_control()
+#######              #######       |___HARDWARE API: DCMotor, Servo, CRServo
  /\_/\    ghelopax    /\_/\        |___DRIVETRAIN: Mecanum Drive
 ( o.o )     ntm      ( o.o )       |___SUBSYSTEMS: Linear Slide, Sushi-roll Intake, Conveyor Belt
  > ^ <   @itsmevjnk   > ^ <        |___ARDUINO FUNCTIONS: setup(), loop()
@@ -17,7 +17,6 @@
 #include <PS2X_lib.h>
 
 #define SPC Serial.print(" ")
-#define EL  Serial.print("\n");
 
 // #define DEBUG_MECANUM
 // #define DEBUG_SETPWM
@@ -30,39 +29,49 @@
 /* CONSTANTS */
 // Motor speed
 #define SPD_MAX          4095
-#define SPD_DEAD         50
+#define SPD_DEAD         70
 #define PER(percentage)  (int16_t)(SPD_MAX * percentage)
 
-#define SPD_DRIVE_LF     PER(1.00)
-#define SPD_DRIVE_LB     PER(0.97)
-#define SPD_DRIVE_RF     PER(0.97)
-#define SPD_DRIVE_RB     PER(0.97)
+#define SPD_DRIVE_LF     PER(0.70)
+#define SPD_DRIVE_LB     PER(0.67)
+#define SPD_DRIVE_RF     PER(0.67)
+#define SPD_DRIVE_RB     PER(0.67)
 #define SPD_SLIDE        PER(1.00)
 #define SPD_INTAKE       PER(1.00)
-#define SPD_CONVEY_LOAD  PER(0.30)
-#define SPD_CONVEY_SHOOT PER(1.00)
+#define SPD_CONVEY       PER(0.80)
+
+// Servo position 
+#define POS_MIN          440
+#define POS_MAX          2270
+
+// CRServo speed
+#define CRSPD_L          400
+#define CRSPD_M          1400
 
 /* PWM channels */
 // DC Motor
 // Drivetrain
-#define LF_A             0      // Mecanum Drive
-#define LF_B             1
-#define LB_A             2
-#define LB_B             3
-#define RF_A             6
-#define RF_B             7
-#define RB_A             4
-#define RB_B             5
+#define LF_A             6      // Mecanum Drive
+#define LF_B             7
+#define LB_A             4
+#define LB_B             5
+#define RF_A             2
+#define RF_B             3
+#define RB_A             0
+#define RB_B             1
 
 // Subsystem
 #define LS_A             8      // Linear Slide
 #define LS_B             9
 
-#define IT_A             10     // Intake
-#define IT_B             11
+#define IT_A             12     // Intake
+#define IT_B             13
 
-#define CB_A             12     // Conveyor Belt
-#define CB_B             13
+#define CB_A             10     // Conveyor Belt
+#define CB_B             11
+
+// Servo
+#define S_OT             14
 
 /* PS2 pins */
 #define PS2_DAT          13
@@ -148,7 +157,45 @@ struct DCMotor {
     Serial.print(channelA); Serial.print(": "); Serial.print(pwm.getPWM(channelA, true)); SPC; 
     Serial.print(channelB); Serial.print(": "); Serial.println(pwm.getPWM(channelB, true));
     #endif
-    }
+  }
+};
+
+struct Servo {
+  private:
+  uint8_t channel;
+
+  public:
+  Servo(uint8_t _channel) : channel(_channel) {}
+
+  void control(int16_t position) {
+    #ifdef RUN
+    pwm.writeMicroseconds(channel, position);
+    #endif
+  }
+
+  // rel_pos = R[0...1]
+  void relControl(float rel_pos) {
+    control(POS_MIN + rel_pos * (POS_MAX - POS_MIN));
+  }
+};
+
+struct CRServo {
+  private:
+  uint8_t channel;
+
+  public:
+  CRServo(uint8_t _channel) : channel(_channel) {}
+
+  void control(int16_t speed) {
+    #ifdef RUN
+    pwm.writeMicroseconds(channel, speed);
+    #endif
+  }
+
+  // rel_speed = R[-1...1]
+  void relControl(float rel_speed) {
+    control(CRSPD_M + rel_speed * (CRSPD_M - CRSPD_L));
+  }
 };
 
 
@@ -240,23 +287,56 @@ struct Intake {
   }
 } intake;
 
-/* Conveyor Belt (PUSH + TOGGLE Mode) */
+/* Conveyor Belt (TOGGLE) */
 struct Conveyor_Belt {
   private:
-  bool shootmode;
+  bool state;
   DCMotor convey;
 
   public:
-  Conveyor_Belt() : shootmode(false), convey(CB_A, CB_B) {}
+  Conveyor_Belt() : state(false), convey(CB_A, CB_B) {}
 
-  void update(bool run, bool togg) {
-    shootmode ^= togg;
+  void update(bool togg) {
+    state ^= togg;
 
-    if (run) convey.control((shootmode ? SPD_CONVEY_SHOOT : SPD_CONVEY_LOAD));
-    else     convey.control(0);
+    convey.control(state ? SPD_CONVEY : 0);
   }
 
 } conveyorbelt;
+
+/* Outtake (FSM) */
+struct Outtake {
+  private:
+  Servo out;
+  char state;
+  /*
+  '3' Block 1 2 3
+  '2' Block 1 2
+  '1' Block 1
+  '0' Block -
+  */
+  char aut[4];
+  float pos[4];
+
+  public:
+  Outtake() : state('3'), out(S_OT) {
+    aut[3] = '2';
+    aut[2] = '1';
+    aut[1] = '0';
+    aut[0] = '3';
+
+    pos[3] = 0.43;
+    pos[2] = 0.63;
+    pos[1] = 0.76;
+    pos[0] = 0.83;
+  }
+
+  void update(bool togg) {
+    if (togg) state = aut[state - '0'];
+
+    out.relControl(pos[state - '0']);
+  }
+} outtake;
 
 // #################
 // ARDUINO FUNCTIONS
@@ -265,7 +345,7 @@ struct Conveyor_Belt {
 void setup() {
   Serial.begin(115200);  // Arduino Uno R3 baud rate (bps)
 
-  Serial.println("VSAR 2026 : RIAN C");
+  Serial.println("Robots In A Nutshell\nVSAR 2026 : RIAN C\nBy ghelopax w/ @ntm. Original: @itsmevjnk/VRC-2022.\n");
 
   init_PWMDriver();
   init_PS2();
@@ -281,7 +361,7 @@ void loop() {
   );
   // drivetrain.test();
 
-  linearslide.update(
+  linearslide.update( 
     ps2.Button(PSB_PAD_UP),
     ps2.Button(PSB_PAD_DOWN)
   );
@@ -291,8 +371,11 @@ void loop() {
   );
 
   conveyorbelt.update(
-    ps2.Button(PSB_R1),
-    ps2.ButtonPressed(PSB_TRIANGLE)
+    ps2.ButtonPressed(PSB_R1)
+  );
+
+  outtake.update(
+    ps2.ButtonPressed(PSB_R2)
   );
 
   #ifdef DEBUG_SETPWM
