@@ -30,7 +30,7 @@
 // Motor speed
 #define SPD_MAX          4095
 #define SPD_DEAD         70
-#define PER(percentage)  (int16_t)(SPD_MAX * percentage)
+#define PER(percentage)  (int16_t)(SPD_MAX * (percentage))
 
 #define SPD_DRIVE_LF     PER(0.70)
 #define SPD_DRIVE_LB     PER(0.67)
@@ -144,6 +144,7 @@ struct DCMotor {
     reverse(_reverse) 
   {}
 
+  // 12-bit pwm speed
   void control(int16_t speed) {
     if (abs(speed) < SPD_DEAD) speed = 0;
     if (reverse) speed = -speed;
@@ -157,6 +158,11 @@ struct DCMotor {
     Serial.print(channelA); Serial.print(": "); Serial.print(pwm.getPWM(channelA, true)); SPC; 
     Serial.print(channelB); Serial.print(": "); Serial.println(pwm.getPWM(channelB, true));
     #endif
+  }
+
+  // rel_speed = R[-1...1]
+  void relControl(float rel_speed) {
+    control(PER(rel_speed));
   }
 };
 
@@ -215,7 +221,8 @@ struct Drivetrain {
     rightback(RB_A, RB_B, true)
   {}
 
-  void test() { // default to forward movement
+  // default to forward movement
+  void test() {
     leftfront .control(SPD_DRIVE_LF);
     leftback  .control(SPD_DRIVE_LB);
     rightfront.control(SPD_DRIVE_RF);
